@@ -1,240 +1,238 @@
-<!DOCTYPE html>
+<!doctype html>
+<!--
+Copyright 2018 The Immersive Web Community Group
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of
+this software and associated documentation files (the "Software"), to deal in
+the Software without restriction, including without limitation the rights to
+use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of
+the Software, and to permit persons to whom the Software is furnished to do so,
+subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS
+FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
+COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
+IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
+CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+-->
 <html>
   <head>
     <meta charset='utf-8'>
-    <meta http-equiv='X-UA-Compatible' content='chrome=1'>
-    <meta name='viewport' content='width=device-width, initial-scale=1'>
+    <meta name='viewport' content='width=device-width, initial-scale=1, user-scalable=no'>
     <meta name='mobile-web-app-capable' content='yes'>
     <meta name='apple-mobile-web-app-capable' content='yes'>
-
-    <meta name='twitter:card' content='summary'>
-    <meta name='twitter:title' content='WebXR Samples'>
-    <meta name='twitter:description' content='Sample WebXR pages for testing and reference'>
-
     <link rel='icon' type='image/png' sizes='32x32' href='favicon-32x32.png'>
     <link rel='icon' type='image/png' sizes='96x96' href='favicon-96x96.png'>
+    <link rel='stylesheet' href='css/common.css'>
 
-    <link rel='stylesheet' href='css/stylesheet.css'>
-    <link rel='stylesheet' href='css/pygment_trac.css'>
-
-    <style>
-      article {
-        position: relative;
-        padding: 0.5em;
-        background-color: rgba(255, 255, 255, 0.90);
-        margin-bottom: 1em;
-        border-radius: 3px;
-      }
-
-      article h3 {
-        font-size: 1.0em;
-        margin-top: 0px;
-        margin-bottom: 0px;
-      }
-
-      article h3::before {
-        display: inline-block;
-        content: attr(data-index) ' - ';
-        font-weight: bold;
-        white-space: nowrap;
-        margin-right: 0.2em;
-      }
-
-      article h4 {
-        position: absolute;
-        right: 0.5em;
-        top: 0.5em;
-        margin-top: 0px;
-        margin-bottom: 0px;
-      }
-
-      article p {
-        margin: 0.5em;
-      }
-
-      article .links {
-        margin-left: 0.5em;
-        margin-right: 0.5em;
-      }
-
-      article a {
-        display: inline-block;
-      }
-
-      article a:not(:first-child)::before {
-        display: inline-block;
-        content: '•';
-        font-weight: bold;
-        white-space: nowrap;
-        margin-left: 0.5em;
-        margin-right: 0.5em;
-      }
-
-      .github-link {
-        font-size: 0.8em;
-      }
-
-      .wordmark img {
-        width: 70%;
-      }
-    </style>
-
-    <!--[if lt IE 9]>
-    <script src='https://html5shiv.googlecode.com/svn/trunk/html5.js'></script>
-    <![endif]-->
-    <title>WebXR - Samples</title>
+    <title>Stereo Video Player</title>
   </head>
   <body>
+    <header>
+      <details open>
+        <summary>Stereo Video Player</summary>
+        <p>
+          This sample demonstrates how to play a stereo 3D video.
+        </p>
+      </summary>
+    </header>
+    <script type="module">
+      import {WebXRButton} from './js/util/webxr-button.js';
+      import {Scene} from './js/render/scenes/scene.js';
+      import {Renderer, createWebGLContext} from './js/render/core/renderer.js';
+      import {UrlTexture} from './js/render/core/texture.js';
+      import {ButtonNode} from './js/render/nodes/button.js';
+      import {Gltf2Node} from './js/render/nodes/gltf2.js';
+      import {VideoNode} from './js/render/nodes/video.js';
+      import {InlineViewerHelper} from './js/util/inline-viewer-helper.js';
+      import {QueryArgs} from './js/util/query-args.js';
 
-    <div class='container' id='container'>
-      <header class='header'>
-        <div id='nav'>
-            <a href='./' class='selected'>Samples</a>
-            <!--a href='proposals/'>Proposals</a-->
-            <a href='tests/'>Test Pages</a>
-        </div>
+      // If requested, use the polyfill to provide support for mobile devices
+      // and devices which only support WebVR.
+      import WebXRPolyfill from './js/third-party/webxr-polyfill/build/webxr-polyfill.module.js';
+      if (QueryArgs.getBool('usePolyfill', true)) {
+        let polyfill = new WebXRPolyfill();
+      }
 
-        <h1>
-          <a href='' class='wordmark'>
-            <img src='media/logo/webxr-logo.svg' alt='WebXR Logo'/>
-          </a>
-        </h1>
-        <h2 class='tagline'>Sample Pages</h2>
-      </header>
+      // XR globals.
+      let xrButton = null;
+      let xrImmersiveRefSpace = null;
+      let inlineViewerHelper = null;
 
-      <main class='main' id='main'>
-        <p>Sample pages demonstrating how to use various aspects of the WebXR API.<br/>
-        <a href="explainer.html">Learn More</a></p>
+      // WebGL scene globals.
+      let gl = null;
+      let renderer = null;
+      let scene = new Scene();
+      scene.addNode(new Gltf2Node({url: 'media/gltf/home-theater/home-theater.gltf'}));
+      scene.enableStats(false);
 
-        <script>
-          let pages = [
-            { title: 'Immersive VR Session', category: 'Basics',
-              path: 'immersive-vr-session.html',
-              description: 'Demonstrates use of an "immersive-vr" XRSession to present a WebGL scene on an XR device.' },
+      let video = document.createElement('video');
+      video.autoplay = true;
+      video.type = 'application/x-mpegURL';
+      video.src = 'stream.mjpg';
 
-            { title: 'Inline Session', category: 'Basics',
-              path: 'inline-session.html',
-              description: 'Demonstrates use of an "inline" XRSession to present the same WebGL scene on the page and on an XR device.' },
+      let videoNode = new VideoNode({
+        video: video,
+        displayMode: 'stereoTopBottom'
+      });
+      
+      // When the video is clicked we'll pause it if it's playing.
+      videoNode.onSelect(() => {
+        if (!video.paused) {
+          playButton.visible = true;
+          video.pause();
+        } else {
+          playButton.visible = false;
+          video.play();
+        }
+      });
+      videoNode.selectable = true;
 
-            { tag: 'hr' },
-            { tag: 'br' },
+      // Move back to the position of the in-room screen and size to cover it.
+      // Values determined experimentally and with many refreshes.
+      videoNode.translation = [0.025, 0.275, -4.4];
+      videoNode.scale = [2.1, 1.1, 1.0];
+      scene.addNode(videoNode);
 
-            { title: 'Reduced-Bind Rendering', category: 'Performance',
-              path: 'reduced-bind-rendering.html',
-              description: 'Demonstrates a technique to reduce the number of state changes made while rendering.' },
+      video.addEventListener('loadeddata', () => {
+        // Once the video has loaded up adjust the aspect ratio of the "screen"
+        // to fit the video's native shape.
+        let aspect = videoNode.aspectRatio;
+        if (aspect < 2.0) {
+          videoNode.scale = [aspect * 1.1, 1.1, 1.0];
+        } else {
+          videoNode.scale = [2.1, 2.1 / aspect, 1.0];
+        }
+      });
 
-            { title: 'Room Scale', category: 'Basics',
-              path: 'room-scale.html',
-              description: 'Demonstrates using a "local-floor" reference space to provide room scale tracking.' },
+      // Add a button to the scene to play/pause the movie.
+      let playTexture = new UrlTexture('media/textures/play-button.png');
 
-            { title: 'Input Tracking', category: 'Input',
-              path: 'input-tracking.html',
-              description: 'Demonstrates basic tracking and rendering of XRInputSources.'},
+      // Create a button that plays the video when clicked.
+      let playButton = new ButtonNode(playTexture, () => {
+        // Play the video and hide the button.
+        if (video.paused) {
+          playButton.visible = false;
+          video.play();
+        }
+      });
+      // Move the play button to the center of the screen and make it much
+      // bigger.
+      playButton.translation = [0.025, 0.275, -4.2];
+      playButton.scale = [5.0, 5.0, 5.0];
+      scene.addNode(playButton);
 
-            { title: 'Input Selection', category: 'Input',
-              path: 'input-selection.html',
-              description: 'Demonstrates handling \'select\' events generated by XRInputSources.'},
+      function initXR() {
+        xrButton = new WebXRButton({
+          onRequestSession: onRequestSession,
+          onEndSession: onEndSession
+        });
+        document.querySelector('header').appendChild(xrButton.domElement);
 
-            { title: 'Controller State', category: 'Input',
-              path: 'controller-state.html',
-              description: 'Demonstrates responding to controller state from an XRInputSource\'s gamepad attribute.'},
+        if (navigator.xr) {
+          navigator.xr.supportsSession('immersive-vr').then(() => {
+            xrButton.enabled = true;
+          });
 
-            { title: 'Framebuffer Scaling', category: 'Performance',
-              path: 'framebuffer-scaling.html',
-              description: 'Demonstrates scaling a layer\'s framebuffer to statically control performance or quality.' },
+          navigator.xr.requestSession('inline').then(onSessionStarted);
+        }
+      }
 
-            { title: '360 Stereo Photos', category: 'Content',
-              path: '360-photos.html',
-              description: 'Demonstrates displaying a 360 degree equirectangular stereo photo.' },
+      function initGL() {
+        if (gl)
+          return;
 
-            { title: 'Stereo Video', category: 'Content',
-              path: 'stereo-video.html',
-              description: 'Demonstrates playing stereo videos.' },
+        gl = createWebGLContext({
+          xrCompatible: true
+        });
+        document.body.appendChild(gl.canvas);
 
-            { title: 'Positional Audio', category: 'Content',
-              path: 'positional-audio.html',
-              description: 'Demonstrates playing audio that sounds as if it originates at a specific point in the space.' },
+        function onResize() {
+          gl.canvas.width = gl.canvas.clientWidth * window.devicePixelRatio;
+          gl.canvas.height = gl.canvas.clientHeight * window.devicePixelRatio;
+        }
+        window.addEventListener('resize', onResize);
+        onResize();
 
-            { title: 'Spectator Mode', category: 'Advanced Techniques',
-              path: 'spectator-mode.html',
-              description: 'Demonstrates rendering a 3rd person view of the scene to an external monitor.' },
+        renderer = new Renderer(gl);
+        scene.setRenderer(renderer);
+        scene.inputRenderer.setControllerMesh(new Gltf2Node({url: 'media/gltf/controller/controller.gltf'}));
+      }
 
-            { title: 'Teleportation', category: 'Advanced Techniques',
-              path: 'teleportation.html',
-              description: 'Demonstrates teleporting the viewer around the scene with getOffsetReferenceSpace().'},
+      function onRequestSession() {
+        navigator.xr.requestSession('immersive-vr', {
+            requiredFeatures: ['local-floor'] 
+        }).then((session) => {
+          xrButton.setSession(session);
+          session.isImmersive = true;
+          onSessionStarted(session);
+        });
+      }
 
-            { tag: 'hr' },
-            { tag: 'br' },
+      function onSessionStarted(session) {
+        session.addEventListener('end', onSessionEnded);
+        session.addEventListener('select', (ev) => {
+          let refSpace = ev.frame.session.isImmersive ?
+                           xrImmersiveRefSpace :
+                           inlineViewerHelper.referenceSpace;
+          scene.handleSelect(ev.inputSource, ev.frame, refSpace);
+        });
 
-            { title: 'Barebones', category: 'WIN32_LEAN_AND_MEAN',
-              path: 'xr-barebones.html',
-              description: 'Extremely simple use of WebXR with no library dependencies. Doesn\'t render anything exciting.',
-              noPolyfill: true },
-          ];
+        initGL();
 
-          let mainElement = document.getElementById("main");
+        let glLayer = new XRWebGLLayer(session, gl);
+        session.updateRenderState({ baseLayer: glLayer });
 
-          // Append an element for every item in the pages list.
-          let pageIndex = 0;
-          for (var i = 0; i < pages.length; ++i) {
-            var page = pages[i];
-
-            if (page.tag) {
-              mainElement.appendChild(document.createElement(page.tag));
-              continue;
-            } else {
-              pageIndex++;
-            }
-
-            let article = document.createElement('article');
-
-            let title = document.createElement('h3');
-            title.setAttribute('data-index', pageIndex);
-
-            let titleLink = document.createElement('a');
-            titleLink.href = page.path;
-            titleLink.innerHTML = page.title;
-            title.appendChild(titleLink);
-            article.appendChild(title);
-
-            let category = document.createElement('h4');
-            category.innerHTML = page.category;
-            article.appendChild(category);
-
-            let description = document.createElement('p');
-            description.innerHTML = page.description;
-            article.appendChild(description);
-
-            let links = document.createElement('div');
-            links.classList.add('links');
-
-            let sourceLink = document.createElement('a');
-            sourceLink.href = 'https://github.com/immersive-web/webxr-samples/blob/master/' + page.path;
-            sourceLink.innerHTML = 'Source';
-            links.appendChild(sourceLink);
-
-            if (!page.noPolyfill) {
-              let polyfillLink = document.createElement('a');
-              polyfillLink.href = page.path + '?usePolyfill=0';
-              polyfillLink.innerHTML = 'Run Without Polyfill';
-              links.appendChild(polyfillLink);
-            }
-
-            article.appendChild(links);
-
-            mainElement.appendChild(article);
+        // In this case we're going to use an 'local' frame of reference
+        // because we want to users head to appear in the right place relative
+        // to the center chair, as if they're sitting in it, rather than
+        // somewhere in the room relative to the floor.
+        let refSpaceType = session.isImmersive ? 'local' : 'viewer';
+        session.requestReferenceSpace(refSpaceType).then((refSpace) => {
+          if (session.isImmersive) {
+            xrImmersiveRefSpace = refSpace;
+          } else {
+            inlineViewerHelper = new InlineViewerHelper(gl.canvas, refSpace);
           }
-        </script>
-      </main>
 
-      <p>Models used in these samples come from <a href="https://poly.google.com">Poly</a>, and many were modeled in <a href="https://vr.google.com/blocks/">Blocks</a>.<br/>
-      They a stored and loaded using the <a href="https://www.khronos.org/gltf/">glTF 2.0 format</a>.<br/>
-      Attribution for individual models can be found under the <a href="https://github.com/immersive-web/webxr-samples/tree/master/media/gltf">media/gltf</a> folders for this repository.</p>
+          session.requestAnimationFrame(onXRFrame);
+        });
+      }
 
-      <h3><a class='github-link' href='https://github.com/immersive-web/webxr-samples'>View samples source on GitHub</a></h3>
+      function onEndSession(session) {
+        session.end();
+      }
 
-      <footer class='footer'>
-      </footer>
-    </div>
+      function onSessionEnded(event) {
+        if (event.session.isImmersive) {
+          xrButton.setSession(null);
+        }
+      }
+
+      function onXRFrame(t, frame) {
+        let session = frame.session;
+        let refSpace = session.isImmersive ?
+                         xrImmersiveRefSpace :
+                         inlineViewerHelper.referenceSpace;
+        let pose = frame.getViewerPose(refSpace);
+
+        scene.startFrame();
+
+        session.requestAnimationFrame(onXRFrame);
+
+        scene.updateInputSources(frame, refSpace);
+
+        scene.drawXRFrame(frame, pose);
+
+        scene.endFrame();
+      }
+
+      // Start the XR application.
+      initXR();
+    </script>
   </body>
 </html>
